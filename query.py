@@ -64,6 +64,7 @@ def callMvaApi(token, path):
 	print(f'### {path} :')
 	print(json.dumps(data, indent=4))
 	print(f'###\n\n')
+	return data
 
 def main():
 	global masterToken
@@ -86,6 +87,11 @@ def main():
 	callMvaApi(masterToken, '/productAPI/v2/currentSpend')
 	callMvaApi(masterToken, '/productAPI/v2/discountInfo')
 	callMvaApi(masterToken, '/productAPI/v2/extraService')
+
+	data = callMvaApi(masterToken, '/productAPI/v2/myPlan')
+	usable = data["allowanceInfo"]["allowances"][0]["usageValue"]
+	description = data["allowanceInfo"]["allowances"][0]["usageDescription"]
+	print(f'Elérhető: {usable} {description}')
 
 
 #masterToken = ""
