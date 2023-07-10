@@ -79,7 +79,7 @@ def main():
 	else:
 		print(f'reusing hardcoded token: {masterToken}')
 	
-  callMvaApi(masterToken, '/customerAPI/v1/personalInformation')
+  	callMvaApi(masterToken, '/customerAPI/v1/personalInformation')
 #	ids = ['2003692668', '9161015985413772348', '9161015972513693591', '9161015993013737567']
 	#for i in ids:
 	#	callMvaApi(masterToken, f'/customerAPI/v1/customerAccount/{i}/subscription')
