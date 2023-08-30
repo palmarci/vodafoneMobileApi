@@ -1,6 +1,6 @@
 # vodafoneMobileApi
 
-I encountered a challenge while trying to track my mobile data usage: carrier's mobile app implemented a root-check. However, I found a workaround by modifying the APK file to bypass this restriction, allowing me to use the app for a few weeks.
+I encountered a challenge while trying to track my mobile data usage: the carrier's mobile app implemented root-checking. However, I found a workaround by modifying the APK file to bypass this restriction, allowing me to use the app for a few weeks.
 
 Unfortunately, I hit another roadblock when the app required the latest update for access. To tackle this issue, I turned my attention towards extracting data from the web API. This proved difficult due to Google Captcha protection.
 
