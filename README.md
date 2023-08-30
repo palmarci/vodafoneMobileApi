@@ -1,3 +1,11 @@
 # vodafoneMobileApi
 
-I wanted to check how much mobile data I have left for the current month but unfortunately I was unable to start the mobile app because it is restricted on rooted phones. However, I found a workaround by modifying the APK file to bypass the root check. It was working for a few weeks but to my disappointment, I discovered that the app requires the latest version for each update before allowing access. As a solution, I thought of extracting the data from the web API. Unfortunately, the web API is protected by Google Captcha, so I decided to utilize the mobile API instead since it doesn't have Captcha protection. The app implemented SSL pinning, but I managed to bypass it by patching it and intercepting the traffic. Regrettably, the app crashes after retrieving the token. I attempted to decompile the Java code to interact with the API, but due to time constraints, I couldn't pursue this exploration further. Nonetheless, it was an enjoyable project, and perhaps someone else or even myself will continue it in the future.
+I encountered a challenge while trying to track my mobile data usage: carrier's mobile app implemented a root-check. However, I found a workaround by modifying the APK file to bypass this restriction, allowing me to use the app for a few weeks.
+
+Unfortunately, I hit another roadblock when the app required the latest update for access. To tackle this issue, I turned my attention towards extracting data from the web API. This proved difficult due to Google Captcha protection.
+
+I then discovered that the mobile API didn't have Captcha protection, and even though the app implemented SSL pinning, I managed to work around it by patching and intercepting the traffic.
+
+However, my progress was halted when the app started crashing after retrieving the token. I considered decompiling the Java code to interact with the API but couldn't due to time constraints.
+
+Nonetheless, this project was quite an interesting challenge. Perhaps in the future, either I or someone else will pick it up again and continue exploring the possibilities.
