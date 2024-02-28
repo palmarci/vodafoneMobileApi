@@ -2,17 +2,23 @@ import requests
 import json
 import logging
 import urllib.parse
-import datetime
-import humanfriendly
 import os
 import sys
 import matplotlib.pyplot as plt
+from datetime import datetime, timedelta
+import humanfriendly
+import shutil
+import copy
 
 # config
-client_password = ''
-client_username = ''
-output_html = "index.html"
-output_graph = "graph.png"
+CLIENT_USERNAME = ''
+CLIENT_PASSWORD = ''
+HTML_FILE = "index.html"
+GRAPH_FILE = "graph.png"
+LOG_FILE = "data2.json"
+FILTER_DAYS = 40
+RENEW_DELAY_HOURS = 48
+RENEW_DATE_FORMAT = "%Y-%m-%d"
 
 # extracted from the apk - dont touch
 jwtUrl = "https://auth.vodafone.hu/oxauth/restv1/token"
@@ -27,6 +33,20 @@ requests_log = logging.getLogger("requests.packages.urllib3")
 requests_log.setLevel(logging.DEBUG)
 requests_log.propagate = True
 
+def format_size(megabytes_value, threshold_mb=1000):
+	if megabytes_value >= threshold_mb:
+		gigabytes_value = megabytes_value / 1000
+		return f"{gigabytes_value:.2f} GB"
+	else:
+		return f"{megabytes_value} MB"
+
+def get_current_date():
+	return datetime.now()
+
+def parse_date(date_str, format):
+	date_object = datetime.strptime(date_str, format)
+	return date_object
+
 def call_mva_api(token, path):
 	headers = {
 		'Content-Type': 'application/x-www-form-urlencoded',
@@ -35,39 +55,33 @@ def call_mva_api(token, path):
 	data = json.loads(requests.get(f'https://public.api.vodafone.hu/mva-api{path}', headers=headers).text)
 	print(f'### {path} :')
 	print(json.dumps(data, indent=4, ensure_ascii=False))
+
+	if "code" in data and data["code"] == 503:
+		print("service is down, exitting...")
+		sys.exit(-1)
+
 	print(f'###\n\n')
-	if data.get("fault") != None:
-		print(f"found fault, exitting")
+	if data.get("fault") is not None:
+		print(f"found fault, exiting")
 		sys.exit(-1)
 	return data
 
-def write_html(text):
-	#print(text)
-	f = open(output_html, "w", encoding="utf-8")
-	f.write(text)
-	f.close()
-
 def get_api_key():
-			
 	def get_jwt():
-		payload = f'client_id={jwtClientId}&client_secret={jwtClientSecret}&scope=other openid&grant_type=password&keep_signed_in=true&password={client_password}&username={client_username}'
-
+		payload = f'client_id={jwtClientId}&client_secret={jwtClientSecret}&scope=other openid&grant_type=password&keep_signed_in=true&password={CLIENT_PASSWORD}&username={CLIENT_USERNAME}'
 		headers = {
 			'Authorization': f'Basic {jwtBearerToken}',
 			'Content-Type': 'application/x-www-form-urlencoded',
 		}
-
 		json_data = json.loads(requests.post(jwtUrl, headers=headers, data=payload).text)
 		return json_data["access_token"]
 
 	def get_bearer(jwtToken):
 		grant_type = urllib.parse.quote_plus('urn:ietf:params:oauth:grant-type:jwt-bearer')
 		payload = f'client_id={bearerClientId}&assertion={jwtToken}&grant_type={grant_type}'
-
 		headers = {
 			'Content-Type': 'application/x-www-form-urlencoded',
 		}
-
 		json_data = json.loads(requests.post(bearerUrl, headers=headers, data=payload).text)
 		return json_data["access_token"]
 
@@ -77,141 +91,107 @@ def get_api_key():
 	print(f'got bearer: {bearer_token}')
 	return bearer_token
 
-def get_color(num1, num2):
-    # Find the smaller number
-    smaller_num = min(num1, num2)
+def get_gradient_color(num1, num2):
+	smaller_num = min(num1, num2)
+	percentage = (smaller_num / max(num1, num2)) * 100
+	red = int(255 - (percentage * 2.55))
+	green = int(percentage * 2.55)
+	blue = 0
+	color_code = '#{:02x}{:02x}{:02x}'.format(red, green, blue)
+	return color_code
 
-    # Calculate the percentage
-    percentage = (smaller_num / max(num1, num2)) * 100
-
-    # Calculate the color components
-    red = int(255 - (percentage * 2.55))
-    green = int(percentage * 2.55)
-    blue = 0
-
-    # Generate HTML color code based on the color components
-    color_code = '#{:02x}{:02x}{:02x}'.format(red, green, blue)
-
-    return color_code
-
-def remaining_time(target_date_str):
-    # Convert the target date string to a datetime object
-    target_date = datetime.datetime.strptime(target_date_str, '%Y-%m-%d')
-
-    # Get the current date and time
-    current_date = datetime.datetime.now()
-
-    # Calculate the time difference
-    time_difference = target_date - current_date
-
-    # Calculate days, hours, minutes, and seconds
-    days = time_difference.days
-    hours, remainder = divmod(time_difference.seconds, 3600)
-    minutes, seconds = divmod(remainder, 60)
-
-    # Format the result as a string
-    remaining_time_str = f"{days} days, {hours:02}:{minutes:02}:{seconds:02}"
-
-    return remaining_time_str
-
-def log(availalbe, plan):
-	today = datetime.datetime.today()
-	current_month = today.strftime("%Y-%m")
-	filename = f"{current_month}.json"
-
-	# Define the data structure for each entry
-	new_entry = {
-		"timestamp": datetime.datetime.now().isoformat(),
-		"available": availalbe // (1000*1000),
-		"plan": plan // (1000*1000)
-	}
-		# Try to open and read the existing data (or handle if it doesn't exist)
+def read_log(log_file):
+	# Read old logs
 	try:
-		with open(filename, "r") as file:
+		with open(log_file, "r") as file:
 			data = json.load(file)
 	except (IOError, json.JSONDecodeError):
-		data = []  # Initialize an empty list if file doesn't exist
+		print(f"Error reading old data from file {log_file}")
+		backup_path = f"{log_file}_bak_{str(int(get_current_date().timestamp))}"
+		shutil.copyfile(log_file, backup_path)
+		print(f"created safety backup at {backup_path}")
+		data = []
 
-	# Add the new entry to the existing data
-	data.append(new_entry)
+	cutoff_date = (get_current_date() - timedelta(days=FILTER_DAYS))
+	filtered_data = []
+	for log_entry in data:
+		parsed_date = datetime.fromtimestamp(log_entry["timestamp"])
+		if parsed_date > cutoff_date:
+			log_entry["timestamp"] = parsed_date
+			filtered_data.append(log_entry)
+	return filtered_data
 
-	# Save the updated data to the file
+def write_log(log_file, data):
+	data_bak = copy.deepcopy(data)
 	try:
-		with open(filename, "w") as file:
-			json.dump(data, file, indent=4)
+		with open(log_file, "w") as file:
+			for d in data_bak:
+				d["timestamp"] = int(d["timestamp"].timestamp())
+			print(f"writing data with {len(data_bak)} entries")
+			json.dump(data_bak, file, indent=4)
 		print("Data saved successfully!")
+		return
 	except IOError as e:
 		print(f"Error saving data: {e}")
-	return data
+		sys.exit(-1)
 
-def create_graph(data):
-	timestamps = [datetime.datetime.strptime(d["timestamp"], "%Y-%m-%dT%H:%M:%S.%f") for d in data]
-	current_month = datetime.datetime.today().month
-
-	# Get the maximum plan value
-	max_plan = max(d["plan"] for d in data)
-
-	# Extract available values
+def create_graph(file, data):
+	timestamps = [d["timestamp"] for d in data]
+	plan_max = max(d["plan"] for d in data)
 	available = [d["available"] for d in data]
-
-	# Filter data for current month
-	filtered_timestamps = [t for t in timestamps if t.month == current_month]
-	filtered_available = [a for a, t in zip(available, timestamps) if t.month == current_month]
-	
-	# convert to GB
-	for i, val in enumerate(filtered_available):
-		filtered_available[i] = val / 1000 
-	max_plan = max_plan / 1000
-
-	# Create the plot
 	plt.figure(figsize=(10, 6))
-	plt.plot(filtered_timestamps, filtered_available)
+	plt.plot(timestamps, available, linewidth=5.0, color="black")
 	plt.xlabel("Time")
 	plt.ylabel("Available data (GB)")
 	plt.grid(True)
-
-	# Rotate x-axis labels for better readability
 	plt.xticks(rotation=45)
-
-	# Set y-axis limit to max plan value
-	plt.ylim(0, max_plan)
-
-	# Show the plot
+	plt.ylim(0, plan_max)
 	plt.tight_layout()
-	plt.savefig(output_graph)
+	plt.savefig(file)
+
+def write_html(text):
+	f = open(HTML_FILE, "w", encoding="utf-8")
+	f.write(text)
+	f.close()
 
 def main():
-	# make sure we are outputting in the correct folder
 	os.chdir(os.path.dirname(__file__))
-	
 	api_key = get_api_key()
 	data = call_mva_api(api_key, '/productAPI/v2/myPlan')
-	available_raw = data["allowanceInfo"]["allowances"][0]["usageValue"]
-	plan_raw = data["allowanceInfo"]["allowances"][0]["usageDescription"]
-	available = humanfriendly.parse_size(available_raw.replace(",", "."))
-	plan = humanfriendly.parse_size(plan_raw.replace("/", "").replace(",", "."))
-	color = get_color(available, plan)
-	renew_at = data["tariffInfo"]["tariffBillClosure"]
 
-	monthly_data = log(available, plan)
-	create_graph(monthly_data)
+	plan = data["allowanceInfo"]["allowances"][0]["usageDescription"]
+	plan = humanfriendly.parse_size(plan.replace("/", "")) // 1000 // 1000 # convert to MB
 
-	available_str = humanfriendly.format_size(available)
-	now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-	renew_str = remaining_time(renew_at)
-	plan_str = humanfriendly.format_size(plan)
+	percentage = data["allowanceInfo"]["allowances"][0]["usageProportion"]
+	available = round(plan * percentage) 
+	
+	renew = data["tariffInfo"]["tariffBillClosure"]
+	renew = parse_date(renew, RENEW_DATE_FORMAT)
+	renew += timedelta(hours=RENEW_DELAY_HOURS) # fuck vodafone tbh
+
+	color = get_gradient_color(available, plan)
+	log_data = read_log(LOG_FILE)
+	log_data.append({
+		"timestamp": get_current_date(),
+		"available": available,
+		"plan": plan
+	})
+	write_log(LOG_FILE, log_data)
+	create_graph(GRAPH_FILE, log_data)
 
 	html_content = f'''
-			<meta charset="UTF-8">
-			<center>
-			<br><br>
-			<h1>Available: <span style="color: {color}">{available_str}</span> / {plan_str}</h1>
-			<br><br>
-			<h3>Updated: {now_str}
-			<br>Renew in: {renew_str}
-			<br><br>
-			<img src="graph.png">
-			'''
+		<script src="script.js"></script>
+		<meta charset="UTF-8">
+		<center>
+		<br><br>
+		<h1>Available: <span style="color: {color}">{format_size(available)}</span> / {format_size(plan)}</h1>
+		<br><br>
+		<h3>Updated: <span id="updated">{int(get_current_date().timestamp())}</span></h3>
+		<h3>Renew: <span id="renew">{int(renew.timestamp())}</span></h3>
+		<br><br>
+		<img src="{GRAPH_FILE}">
+		</center>
+		'''
 	write_html(html_content)
 
 if __name__ == "__main__":
