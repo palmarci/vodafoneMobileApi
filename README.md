@@ -9,3 +9,5 @@ I then discovered that the mobile API didn't have Captcha protection, and even t
 However, my progress was halted when the app started crashing after retrieving the token. I considered decompiling the Java code to interact with the API but couldn't due to time constraints.
 
 Nonetheless, this project was quite an interesting challenge. Perhaps in the future, either I or someone else will pick it up again and continue exploring the possibilities.
+
+![image](https://github.com/palmarci/vodafoneMobileApi/assets/20556689/b7846391-2470-4fa1-b335-ba8ad9116b62)
